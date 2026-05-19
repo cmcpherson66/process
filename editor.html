@@ -489,6 +489,105 @@
   .modal p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px; line-height: 1.5; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+  /* ── Formatting toolbar ── */
+  .fmt-toolbar {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+
+  .fmt-btn {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    padding: 3px 9px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.12s;
+    line-height: 1.4;
+  }
+  .fmt-btn:hover { background: var(--surface2); color: var(--text); border-color: var(--text-muted); }
+  .fmt-btn.link-btn { color: #1971c2; border-color: #a5c8f0; }
+  .fmt-btn.link-btn:hover { background: #e7f5ff; color: #1864ab; }
+  .fmt-btn.email-btn { color: #862e9c; border-color: #d0a3e0; }
+  .fmt-btn.email-btn:hover { background: #f8f0fc; color: #6a1080; }
+
+  @media (prefers-color-scheme: dark) {
+    .fmt-btn.link-btn { color: #74c0fc; border-color: #1c4a6e; }
+    .fmt-btn.link-btn:hover { background: #1c2a3a; }
+    .fmt-btn.email-btn { color: #da77f2; border-color: #4a1a5a; }
+    .fmt-btn.email-btn:hover { background: #2a1a3a; }
+  }
+
+  /* ── Insert popover ── */
+  .insert-popover {
+    position: fixed;
+    z-index: 600;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+    padding: 16px;
+    width: 320px;
+    animation: popIn 0.12s ease;
+  }
+
+  @keyframes popIn {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .insert-popover h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+
+  .popover-field {
+    margin-bottom: 10px;
+  }
+
+  .popover-field label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .popover-field input {
+    width: 100%;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface2);
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .popover-field input:focus { border-color: var(--accent); }
+
+  .popover-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+
+  .popover-actions button {
+    padding: 5px 14px;
+    font-size: 0.8rem;
+  }
+
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -738,6 +837,12 @@ function buildCard(node) {
       <span class="toggle-icon open">▶</span>
     </div>
     <div class="card-body">
+      <div class="fmt-toolbar">
+        <button class="fmt-btn bold-btn" title="Bold (wraps selection)"><strong>B</strong></button>
+        <button class="fmt-btn italic-btn" title="Italic (wraps selection)"><em>I</em></button>
+        <button class="fmt-btn link-btn" title="Insert a hyperlink">🔗 Link</button>
+        <button class="fmt-btn email-btn" title="Insert a clickable email address">@ Email</button>
+      </div>
       <textarea class="content-area" rows="4" placeholder="${contentPlaceholder}">${escHtml(node.content)}</textarea>
       <div class="card-footer">
         <span class="info word-count"></span>
@@ -758,6 +863,30 @@ function buildCard(node) {
     wordCount.textContent = words ? `${words} word${words !== 1 ? 's' : ''}` : '';
   }
   updateWordCount();
+
+  // Formatting toolbar
+  card.querySelector('.bold-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    wrapSelection(textarea, '**', '**', 'bold text');
+    node.content = textarea.value;
+    updateWordCount();
+    markDirty();
+  });
+  card.querySelector('.italic-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    wrapSelection(textarea, '*', '*', 'italic text');
+    node.content = textarea.value;
+    updateWordCount();
+    markDirty();
+  });
+  card.querySelector('.link-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    showInsertPopover(e.currentTarget, textarea, 'link', node, updateWordCount);
+  });
+  card.querySelector('.email-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    showInsertPopover(e.currentTarget, textarea, 'email', node, updateWordCount);
+  });
 
   // Toggle collapse
   function toggleCollapse(e) {
@@ -858,6 +987,143 @@ function buildCard(node) {
   observer.observe(card);
 
   return card;
+}
+
+// ── Formatting helpers ────────────────────────────────────────────────────────
+function wrapSelection(textarea, before, after, placeholder) {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selected = textarea.value.substring(start, end) || placeholder;
+  const insert = before + selected + after;
+  textarea.setRangeText(insert, start, end, 'select');
+  // Reposition selection inside the markers so the user can type directly
+  textarea.selectionStart = start + before.length;
+  textarea.selectionEnd = start + before.length + selected.length;
+  textarea.dispatchEvent(new Event('input'));
+  textarea.focus();
+}
+
+function insertAtCursor(textarea, text) {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  textarea.setRangeText(text, start, end, 'end');
+  textarea.dispatchEvent(new Event('input'));
+  textarea.focus();
+}
+
+let activePopover = null;
+
+function showInsertPopover(anchorBtn, textarea, type, node, updateWordCount) {
+  // Close any existing popover
+  if (activePopover) { activePopover.remove(); activePopover = null; }
+
+  const isLink = type === 'link';
+  const selectedText = textarea.value.substring(textarea.selectionStart, textarea.selectionEnd);
+
+  const popover = document.createElement('div');
+  popover.className = 'insert-popover';
+
+  if (isLink) {
+    popover.innerHTML = `
+      <h4>🔗 Insert Hyperlink</h4>
+      <div class="popover-field">
+        <label>Display text</label>
+        <input id="pop-text" type="text" placeholder="e.g. Click here" value="${escHtml(selectedText)}" maxlength="300">
+      </div>
+      <div class="popover-field">
+        <label>Web address (URL)</label>
+        <input id="pop-url" type="url" placeholder="https://www.example.com" maxlength="2000">
+      </div>
+      <div class="popover-actions">
+        <button id="pop-cancel">Cancel</button>
+        <button class="btn-primary" id="pop-insert">Insert Link</button>
+      </div>
+    `;
+  } else {
+    popover.innerHTML = `
+      <h4>@ Insert Email Address</h4>
+      <div class="popover-field">
+        <label>Email address</label>
+        <input id="pop-email" type="email" placeholder="name@example.com.au" maxlength="320">
+      </div>
+      <div class="popover-field">
+        <label>Display text <span style="font-weight:400;text-transform:none">(optional — leave blank to show the address)</span></label>
+        <input id="pop-text" type="text" placeholder="e.g. Contact us" value="${escHtml(selectedText)}" maxlength="300">
+      </div>
+      <div class="popover-actions">
+        <button id="pop-cancel">Cancel</button>
+        <button class="btn-primary" id="pop-insert">Insert Email</button>
+      </div>
+    `;
+  }
+
+  document.body.appendChild(popover);
+  activePopover = popover;
+
+  // Position below the anchor button, clamped to viewport
+  const rect = anchorBtn.getBoundingClientRect();
+  let top = rect.bottom + 6;
+  let left = rect.left;
+  const pw = 320;
+  if (left + pw > window.innerWidth - 12) left = window.innerWidth - pw - 12;
+  if (top + 260 > window.innerHeight) top = rect.top - 260 - 6;
+  popover.style.top = Math.max(8, top) + 'px';
+  popover.style.left = Math.max(8, left) + 'px';
+
+  // Focus first relevant input
+  setTimeout(() => {
+    const first = isLink
+      ? popover.querySelector('#pop-' + (selectedText ? 'url' : 'text'))
+      : popover.querySelector('#pop-email');
+    first?.focus();
+  }, 30);
+
+  function doInsert() {
+    let markdown = '';
+    if (isLink) {
+      const url = popover.querySelector('#pop-url').value.trim();
+      const text = popover.querySelector('#pop-text').value.trim();
+      if (!url) { popover.querySelector('#pop-url').focus(); return; }
+      markdown = `[${text || url}](${url})`;
+    } else {
+      const email = popover.querySelector('#pop-email').value.trim();
+      const text = popover.querySelector('#pop-text').value.trim();
+      if (!email) { popover.querySelector('#pop-email').focus(); return; }
+      markdown = text ? `[${text}](mailto:${email})` : `<${email}>`;
+    }
+    close();
+    insertAtCursor(textarea, markdown);
+    node.content = textarea.value;
+    updateWordCount();
+    snapshot();
+    markDirty();
+  }
+
+  function close() {
+    popover.remove();
+    if (activePopover === popover) activePopover = null;
+  }
+
+  popover.querySelector('#pop-insert').addEventListener('click', doInsert);
+  popover.querySelector('#pop-cancel').addEventListener('click', close);
+
+  // Submit on Enter in any input
+  popover.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); doInsert(); }
+      if (e.key === 'Escape') close();
+    });
+  });
+
+  // Dismiss on outside click
+  setTimeout(() => {
+    document.addEventListener('mousedown', function outsideClick(e) {
+      if (!popover.contains(e.target) && e.target !== anchorBtn) {
+        close();
+        document.removeEventListener('mousedown', outsideClick);
+      }
+    });
+  }, 10);
 }
 
 // ── Node mutations ────────────────────────────────────────────────────────────
