@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Markdown Viewer</title>
+<title>Process Viewer</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -323,20 +323,6 @@
     font-weight: 600;
   }
 
-  /* Collapse all / expand all controls */
-  .tree-controls {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 16px;
-    align-items: center;
-  }
-
-  .tree-controls span {
-    font-size: 0.8rem;
-    color: var(--text-muted);
-    flex: 1;
-  }
-
   /* Status bar */
   #statusbar {
     background: var(--surface);
@@ -360,7 +346,7 @@
 <body>
 
 <header>
-  <h1>Markdown Viewer <span id="fileNameDisplay" class="file-name"></span></h1>
+  <h1>Process Viewer <span id="fileNameDisplay" class="file-name"></span></h1>
   <div class="toolbar-group">
     <button class="btn-ghost" id="btnExpandAll" style="display:none">Expand All</button>
     <button class="btn-ghost" id="btnCollapseAll" style="display:none">Collapse All</button>
@@ -378,16 +364,12 @@
   </div>
 
   <div id="tree">
-    <div class="tree-controls">
-      <span id="treeStats"></span>
-    </div>
     <div id="treeContent"></div>
   </div>
 </main>
 
 <div id="statusbar">
   <span class="status-item" id="statusFile">No file open</span>
-  <span class="status-item" id="statusSections"></span>
   <span class="status-item" id="statusWords"></span>
 </div>
 
@@ -529,7 +511,6 @@ function parseTree(text) {
 }
 
 // ── Build DOM tree ────────────────────────────────────────────────────────────
-let totalSections = 0;
 let totalWords = 0;
 
 function buildTreeDOM(node) {
@@ -547,7 +528,6 @@ function buildTreeDOM(node) {
     return frag;
   }
 
-  totalSections++;
   const allText = [node.title, ...node.content].join(' ');
   totalWords += allText.split(/\s+/).filter(Boolean).length;
 
@@ -561,7 +541,7 @@ function buildTreeDOM(node) {
   const hasSubNodes = node.children.length > 0;
 
   const toggle = document.createElement('div');
-  toggle.className = hasSubNodes ? 'toggle-btn open' : 'toggle-btn leaf';
+  toggle.className = hasSubNodes ? 'toggle-btn' : 'toggle-btn leaf';
   toggle.textContent = '▶';
 
   const titleEl = document.createElement('div');
@@ -573,7 +553,7 @@ function buildTreeDOM(node) {
   div.appendChild(header);
 
   const childrenDiv = document.createElement('div');
-  childrenDiv.className = 'node-children';
+  childrenDiv.className = 'node-children collapsed';
 
   // Content blocks
   node.content.forEach(block => {
@@ -621,7 +601,6 @@ async function openFile() {
 }
 
 function renderFile(text, name) {
-  totalSections = 0;
   totalWords = 0;
 
   const tree = parseTree(text);
@@ -638,14 +617,10 @@ function renderFile(text, name) {
   document.getElementById('btnCollapseAll').style.display = '';
   document.getElementById('divider1').style.display = '';
 
-  // Stats
-  document.getElementById('treeStats').textContent =
-    `${totalSections} section${totalSections !== 1 ? 's' : ''}`;
   document.getElementById('fileNameDisplay').textContent = '— ' + name;
 
   // Status bar
   document.getElementById('statusFile').textContent = '📄 ' + name;
-  document.getElementById('statusSections').textContent = `${totalSections} sections`;
   document.getElementById('statusWords').textContent =
     `~${totalWords.toLocaleString()} words`;
 }
