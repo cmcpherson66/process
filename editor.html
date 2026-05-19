@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown Editor</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f0f2f5;
+    --surface: #ffffff;
+    --surface2: #f8f9fa;
+    --border: #dee2e6;
+    --text: #212529;
+    --text-muted: #6c757d;
+    --accent: #2f9e44;
+    --accent-hover: #2b8a3e;
+    --danger: #e03131;
+    --danger-hover: #c92a2a;
+    --warn: #f08c00;
+    --h1-bg: #e8f5e9;
+    --h1-border: #a5d6a7;
+    --h2-bg: #f1f8e9;
+    --h2-border: #c5e1a5;
+    --h3-bg: #f9fbe7;
+    --h3-border: #dce775;
+    --drag-over: #e3f2fd;
+    --shadow: 0 1px 4px rgba(0,0,0,0.1);
+    --radius: 6px;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1b1e;
+      --surface: #25262b;
+      --surface2: #2c2e33;
+      --border: #373a40;
+      --text: #c1c2c5;
+      --text-muted: #868e96;
+      --accent: #69db7c;
+      --accent-hover: #8ce99a;
+      --danger: #ff6b6b;
+      --danger-hover: #ff8787;
+      --warn: #ffd43b;
+      --h1-bg: #1e3a2a;
+      --h1-border: #2d5a3d;
+      --h2-bg: #1e2e1e;
+      --h2-border: #2a4a2a;
+      --h3-bg: #252b1e;
+      --h3-border: #3a4a2a;
+      --drag-over: #1e2e3a;
+      --shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: var(--shadow);
+    position: sticky;
+    top: 0;
+    z-index: 200;
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .logo { font-size: 1rem; font-weight: 700; color: var(--text); flex-shrink: 0; }
+  .logo span { color: var(--accent); }
+
+  .file-badge {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 2px 10px;
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dirty-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    background: var(--warn);
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+
+  .spacer { flex: 1; }
+
+  .toolbar-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+  button {
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    color: var(--text);
+    background: var(--surface);
+  }
+
+  button:hover { background: var(--surface2); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+  .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+  .btn-danger:hover { background: var(--danger-hover); border-color: var(--danger-hover); }
+
+  .btn-add {
+    background: transparent;
+    color: var(--accent);
+    border-color: var(--accent);
+    font-size: 0.78rem;
+    padding: 4px 10px;
+  }
+  .btn-add:hover { background: var(--h1-bg); }
+
+  /* ── Layout ── */
+  .app-body {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    height: calc(100vh - 53px - 32px);
+  }
+
+  /* ── Sidebar / tree panel ── */
+  #sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+  }
+
+  .sidebar-header .spacer { flex: 1; }
+
+  #outline {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .outline-item {
+    display: flex;
+    align-items: center;
+    padding: 5px 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-left: 3px solid transparent;
+    font-size: 0.85rem;
+    line-height: 1.3;
+    gap: 6px;
+    color: var(--text);
+  }
+
+  .outline-item:hover { background: var(--surface2); }
+  .outline-item.active {
+    background: var(--h1-bg);
+    border-left-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .outline-item.level-1 { padding-left: 12px; font-weight: 600; }
+  .outline-item.level-2 { padding-left: 24px; }
+  .outline-item.level-3 { padding-left: 36px; font-size: 0.8rem; color: var(--text-muted); }
+
+  /* ── Main editor area ── */
+  #editorArea {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+  }
+
+  /* ── Welcome screen ── */
+  #welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 70vh;
+    text-align: center;
+    gap: 16px;
+  }
+
+  #welcome .icon { font-size: 3.5rem; opacity: 0.25; }
+  #welcome h2 { font-size: 1.4rem; font-weight: 700; }
+  #welcome p { color: var(--text-muted); max-width: 360px; line-height: 1.6; }
+
+  .welcome-buttons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  /* ── Node cards ── */
+  .node-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    box-shadow: var(--shadow);
+    transition: box-shadow 0.15s;
+  }
+
+  .node-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+  .node-card.dragging { opacity: 0.5; }
+  .node-card.drag-over { border-color: var(--accent); background: var(--drag-over); }
+
+  .node-card.level-1 { border-left: 4px solid var(--h1-border); }
+  .node-card.level-2 { border-left: 4px solid var(--h2-border); margin-left: 16px; }
+  .node-card.level-3 { border-left: 4px solid var(--h3-border); margin-left: 32px; }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    gap: 8px;
+    cursor: pointer;
+    border-radius: var(--radius) var(--radius) 0 0;
+    user-select: none;
+  }
+
+  .node-card.level-1 .card-header { background: var(--h1-bg); }
+  .node-card.level-2 .card-header { background: var(--h2-bg); }
+  .node-card.level-3 .card-header { background: var(--h3-bg); }
+
+  .card-header.collapsed {
+    border-radius: var(--radius);
+  }
+
+  .drag-handle {
+    cursor: grab;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    opacity: 0.5;
+    padding: 2px 4px;
+  }
+  .drag-handle:hover { opacity: 1; }
+  .drag-handle:active { cursor: grabbing; }
+
+  .level-badge {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+
+  .node-card.level-1 .level-badge { background: var(--h1-border); color: #1b5e20; }
+  .node-card.level-2 .level-badge { background: var(--h2-border); color: #33691e; }
+  .node-card.level-3 .level-badge { background: var(--h3-border); color: #558b2f; }
+
+  @media (prefers-color-scheme: dark) {
+    .node-card.level-1 .level-badge { color: #a5d6a7; }
+    .node-card.level-2 .level-badge { color: #c5e1a5; }
+    .node-card.level-3 .level-badge { color: #dce775; }
+  }
+
+  .card-title-input {
+    flex: 1;
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    min-width: 0;
+  }
+
+  .node-card.level-1 .card-title-input { font-size: 1.05rem; }
+  .node-card.level-3 .card-title-input { font-size: 0.88rem; font-weight: 500; }
+
+  .card-title-input::placeholder { color: var(--text-muted); font-weight: 400; font-style: italic; }
+
+  .card-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .node-card:hover .card-actions,
+  .node-card:focus-within .card-actions { opacity: 1; }
+
+  .icon-btn {
+    background: transparent;
+    border: none;
+    padding: 3px 5px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1;
+  }
+  .icon-btn:hover { background: rgba(0,0,0,0.08); color: var(--text); }
+  .icon-btn.delete:hover { color: var(--danger); }
+
+  .toggle-icon {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .toggle-icon.open { transform: rotate(90deg); }
+
+  .card-body {
+    padding: 10px 12px 12px 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .card-body.collapsed { display: none; }
+
+  .content-area {
+    width: 100%;
+    min-height: 80px;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 10px;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .content-area:focus { border-color: var(--accent); }
+  .content-area::placeholder { color: var(--text-muted); font-family: var(--font-sans); font-style: italic; }
+
+  .card-footer {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .card-footer .info {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    flex: 1;
+  }
+
+  /* ── Add section area ── */
+  .add-section-bar {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0 8px 0;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+  }
+
+  .add-section-bar label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .add-section-bar select {
+    font-family: var(--font-sans);
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  .add-section-bar input[type="text"] {
+    flex: 1;
+    font-family: var(--font-sans);
+    font-size: 0.85rem;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    color: var(--text);
+    outline: none;
+    min-width: 0;
+  }
+
+  .add-section-bar input[type="text"]:focus { border-color: var(--accent); }
+
+  /* ── Status bar ── */
+  #statusbar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 6px 16px;
+    display: flex;
+    gap: 16px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  /* ── Notification toast ── */
+  #toast {
+    position: fixed;
+    bottom: 48px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: #333;
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    opacity: 0;
+    transition: all 0.3s;
+    pointer-events: none;
+    z-index: 999;
+    white-space: nowrap;
+  }
+
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+
+  .modal {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 420px;
+    width: 100%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+
+  .modal h3 { font-size: 1.1rem; margin-bottom: 8px; }
+  .modal p { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 16px; line-height: 1.5; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Markdown <span>Editor</span></div>
+  <div id="fileBadge" class="file-badge" style="display:none"></div>
+  <div class="spacer"></div>
+  <div class="toolbar-group" id="editTools" style="display:none">
+    <button id="btnUndo" disabled title="Undo (Ctrl+Z)">↩ Undo</button>
+    <button id="btnAddSection">+ Add Section</button>
+    <button id="btnSave" class="btn-primary" disabled>💾 Save</button>
+    <button id="btnSaveAs">Save As…</button>
+  </div>
+  <div class="toolbar-group">
+    <button id="btnNew">New</button>
+    <button id="btnOpen" class="btn-primary">Open File…</button>
+  </div>
+</header>
+
+<div class="app-body">
+  <div id="sidebar">
+    <div class="sidebar-header">
+      <span>Outline</span>
+      <div class="spacer"></div>
+    </div>
+    <div id="outline">
+      <div style="padding:12px;color:var(--text-muted);font-size:0.8rem;text-align:center">No file open</div>
+    </div>
+  </div>
+
+  <div id="editorArea">
+    <div id="welcome">
+      <div class="icon">✏️</div>
+      <h2>Start Editing</h2>
+      <p>Open an existing Markdown file or create a new document from scratch. No coding knowledge required.</p>
+      <div class="welcome-buttons">
+        <button class="btn-primary" id="btnOpenWelcome">Open File…</button>
+        <button id="btnNewWelcome">New Document</button>
+      </div>
+    </div>
+    <div id="editorContent" style="display:none"></div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span id="statusFile">No file open</span>
+  <span id="statusSections"></span>
+  <span id="statusWords"></span>
+  <span id="statusDirty"></span>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const state = {
+  nodes: [],       // flat array of {id, level, title, content}
+  fileHandle: null,
+  fileName: '',
+  dirty: false,
+  undoStack: [],   // snapshots of nodes array
+  dragId: null,
+};
+
+let nodeIdCounter = 0;
+function newId() { return ++nodeIdCounter; }
+
+// ── Serialise to Markdown ─────────────────────────────────────────────────────
+function toMarkdown() {
+  return state.nodes.map(n => {
+    const hashes = '#'.repeat(n.level);
+    const titleLine = `${hashes} ${n.title || 'Untitled'}`;
+    const body = n.content.trim() ? '\n' + n.content.trim() + '\n' : '';
+    return titleLine + body;
+  }).join('\n') + '\n';
+}
+
+// ── Parse Markdown into nodes ─────────────────────────────────────────────────
+function parseNodes(text) {
+  const lines = text.split('\n');
+  const nodes = [];
+  let current = null;
+  const contentLines = [];
+
+  function flush() {
+    if (current) {
+      current.content = contentLines.join('\n').trim();
+      nodes.push(current);
+      contentLines.length = 0;
+    }
+  }
+
+  for (const line of lines) {
+    const m = line.match(/^(#{1,3}) (.+)/);
+    if (m && m[1].length <= 3) {
+      flush();
+      current = { id: newId(), level: m[1].length, title: m[2].trim(), content: '' };
+    } else if (current) {
+      contentLines.push(line);
+    }
+  }
+  flush();
+  return nodes;
+}
+
+// ── Snapshot / undo ───────────────────────────────────────────────────────────
+function snapshot() {
+  state.undoStack.push(JSON.stringify(state.nodes));
+  if (state.undoStack.length > 50) state.undoStack.shift();
+  document.getElementById('btnUndo').disabled = false;
+}
+
+function undo() {
+  if (!state.undoStack.length) return;
+  const prev = JSON.parse(state.undoStack.pop());
+  state.nodes = prev;
+  document.getElementById('btnUndo').disabled = state.undoStack.length === 0;
+  markDirty();
+  render();
+}
+
+// ── Mark dirty ────────────────────────────────────────────────────────────────
+function markDirty() {
+  state.dirty = true;
+  document.getElementById('btnSave').disabled = !state.fileHandle;
+  updateStatus();
+}
+
+function markClean() {
+  state.dirty = false;
+  document.getElementById('btnSave').disabled = true;
+  updateStatus();
+}
+
+// ── Outline ───────────────────────────────────────────────────────────────────
+function renderOutline() {
+  const el = document.getElementById('outline');
+  if (!state.nodes.length) {
+    el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:0.8rem;text-align:center">No sections yet</div>';
+    return;
+  }
+  el.innerHTML = state.nodes.map(n =>
+    `<div class="outline-item level-${n.level}" data-id="${n.id}" title="${escHtml(n.title)}">
+      ${escHtml(n.title || 'Untitled')}
+    </div>`
+  ).join('');
+  el.querySelectorAll('.outline-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const card = document.querySelector(`.node-card[data-id="${item.dataset.id}"]`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Expand if collapsed
+        const body = card.querySelector('.card-body');
+        if (body && body.classList.contains('collapsed')) {
+          body.classList.remove('collapsed');
+          const toggle = card.querySelector('.toggle-icon');
+          if (toggle) toggle.classList.add('open');
+          const hdr = card.querySelector('.card-header');
+          if (hdr) hdr.classList.remove('collapsed');
+        }
+        highlightActive(item.dataset.id);
+      }
+    });
+  });
+}
+
+function highlightActive(id) {
+  document.querySelectorAll('.outline-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.id === String(id));
+  });
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Main render ───────────────────────────────────────────────────────────────
+function render() {
+  const container = document.getElementById('editorContent');
+  container.innerHTML = '';
+
+  state.nodes.forEach(node => {
+    container.appendChild(buildCard(node));
+  });
+
+  // Add section bar at bottom
+  const addBar = document.createElement('div');
+  addBar.className = 'add-section-bar';
+  addBar.innerHTML = `
+    <label>Add:</label>
+    <select id="addLevel">
+      <option value="1">H1 – Main heading</option>
+      <option value="2" selected>H2 – Sub-heading</option>
+      <option value="3">H3 – Detail</option>
+    </select>
+    <input type="text" id="addTitle" placeholder="Section title…" maxlength="200">
+    <button class="btn-add" id="btnAddBottom">+ Add</button>
+  `;
+  container.appendChild(addBar);
+
+  addBar.querySelector('#btnAddBottom').addEventListener('click', () => {
+    const level = +addBar.querySelector('#addLevel').value;
+    const title = addBar.querySelector('#addTitle').value.trim();
+    addNode(level, title || '');
+    addBar.querySelector('#addTitle').value = '';
+    addBar.querySelector('#addTitle').focus();
+  });
+  addBar.querySelector('#addTitle').addEventListener('keydown', e => {
+    if (e.key === 'Enter') addBar.querySelector('#btnAddBottom').click();
+  });
+
+  renderOutline();
+  updateStatus();
+}
+
+// ── Build a node card ─────────────────────────────────────────────────────────
+function buildCard(node) {
+  const card = document.createElement('div');
+  card.className = `node-card level-${node.level}`;
+  card.dataset.id = node.id;
+  card.draggable = true;
+
+  const levelLabel = ['', 'H1', 'H2', 'H3'][node.level];
+  const placeholder = ['', 'Main section title…', 'Sub-section title…', 'Detail heading…'][node.level];
+  const contentPlaceholder = 'Write content here using plain text or Markdown…\n\nTip: **bold**, *italic*, - bullet list, 1. numbered list';
+
+  card.innerHTML = `
+    <div class="card-header">
+      <span class="drag-handle" title="Drag to reorder">⠿</span>
+      <span class="level-badge">${levelLabel}</span>
+      <input type="text" class="card-title-input" value="${escHtml(node.title)}" placeholder="${placeholder}" maxlength="300">
+      <div class="card-actions">
+        ${node.level < 3 ? `<button class="icon-btn add-child" title="Add sub-section below">+${node.level < 2 ? 'H2' : 'H3'}</button>` : ''}
+        <button class="icon-btn move-up" title="Move up">↑</button>
+        <button class="icon-btn move-down" title="Move down">↓</button>
+        <button class="icon-btn delete" title="Delete section">🗑</button>
+      </div>
+      <span class="toggle-icon open">▶</span>
+    </div>
+    <div class="card-body">
+      <textarea class="content-area" rows="4" placeholder="${contentPlaceholder}">${escHtml(node.content)}</textarea>
+      <div class="card-footer">
+        <span class="info word-count"></span>
+      </div>
+    </div>
+  `;
+
+  const titleInput = card.querySelector('.card-title-input');
+  const bodyDiv = card.querySelector('.card-body');
+  const toggleIcon = card.querySelector('.toggle-icon');
+  const header = card.querySelector('.card-header');
+  const textarea = card.querySelector('.content-area');
+  const wordCount = card.querySelector('.word-count');
+
+  // Word count update
+  function updateWordCount() {
+    const words = textarea.value.trim().split(/\s+/).filter(Boolean).length;
+    wordCount.textContent = words ? `${words} word${words !== 1 ? 's' : ''}` : '';
+  }
+  updateWordCount();
+
+  // Toggle collapse
+  function toggleCollapse(e) {
+    if (e.target !== header && !e.target.classList.contains('toggle-icon') &&
+        !e.target.classList.contains('level-badge') && !e.target.classList.contains('drag-handle')) return;
+    bodyDiv.classList.toggle('collapsed');
+    header.classList.toggle('collapsed', bodyDiv.classList.contains('collapsed'));
+    toggleIcon.classList.toggle('open', !bodyDiv.classList.contains('collapsed'));
+  }
+  header.addEventListener('click', toggleCollapse);
+
+  // Title edit
+  titleInput.addEventListener('input', () => {
+    snapshot();
+    node.title = titleInput.value;
+    renderOutline();
+    markDirty();
+  });
+
+  // Content edit
+  textarea.addEventListener('input', () => {
+    snapshot();
+    node.content = textarea.value;
+    updateWordCount();
+    markDirty();
+  });
+
+  // Auto-resize textarea
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+  });
+
+  // Action buttons
+  const addChildBtn = card.querySelector('.add-child');
+  if (addChildBtn) {
+    addChildBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const childLevel = node.level + 1;
+      addNodeAfter(node.id, childLevel, '');
+    });
+  }
+
+  card.querySelector('.move-up').addEventListener('click', e => {
+    e.stopPropagation();
+    moveNode(node.id, -1);
+  });
+
+  card.querySelector('.move-down').addEventListener('click', e => {
+    e.stopPropagation();
+    moveNode(node.id, 1);
+  });
+
+  card.querySelector('.delete').addEventListener('click', e => {
+    e.stopPropagation();
+    confirmDelete(node);
+  });
+
+  // Drag-and-drop
+  card.addEventListener('dragstart', ev => {
+    state.dragId = node.id;
+    card.classList.add('dragging');
+    ev.dataTransfer.effectAllowed = 'move';
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+    state.dragId = null;
+    document.querySelectorAll('.node-card').forEach(c => c.classList.remove('drag-over'));
+  });
+  card.addEventListener('dragover', ev => {
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = 'move';
+    if (state.dragId !== node.id) card.classList.add('drag-over');
+  });
+  card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+  card.addEventListener('drop', ev => {
+    ev.preventDefault();
+    card.classList.remove('drag-over');
+    if (state.dragId && state.dragId !== node.id) {
+      snapshot();
+      const fromIdx = state.nodes.findIndex(n => n.id === state.dragId);
+      const toIdx = state.nodes.findIndex(n => n.id === node.id);
+      if (fromIdx !== -1 && toIdx !== -1) {
+        const [moved] = state.nodes.splice(fromIdx, 1);
+        state.nodes.splice(toIdx, 0, moved);
+        markDirty();
+        render();
+      }
+    }
+  });
+
+  // Scroll spy
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) highlightActive(node.id);
+    });
+  }, { threshold: 0.5 });
+  observer.observe(card);
+
+  return card;
+}
+
+// ── Node mutations ────────────────────────────────────────────────────────────
+function addNode(level, title) {
+  snapshot();
+  state.nodes.push({ id: newId(), level, title, content: '' });
+  markDirty();
+  render();
+  // Focus new card's title input
+  setTimeout(() => {
+    const cards = document.querySelectorAll('.node-card');
+    const last = cards[cards.length - 2]; // -2 because add bar is last
+    if (last) {
+      const input = last.querySelector('.card-title-input');
+      if (input) input.focus();
+    }
+  }, 50);
+}
+
+function addNodeAfter(afterId, level, title) {
+  snapshot();
+  const idx = state.nodes.findIndex(n => n.id === afterId);
+  const newNode = { id: newId(), level, title, content: '' };
+  state.nodes.splice(idx + 1, 0, newNode);
+  markDirty();
+  render();
+  setTimeout(() => {
+    const card = document.querySelector(`.node-card[data-id="${newNode.id}"]`);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      card.querySelector('.card-title-input')?.focus();
+    }
+  }, 50);
+}
+
+function moveNode(id, dir) {
+  snapshot();
+  const idx = state.nodes.findIndex(n => n.id === id);
+  const target = idx + dir;
+  if (target < 0 || target >= state.nodes.length) return;
+  [state.nodes[idx], state.nodes[target]] = [state.nodes[target], state.nodes[idx]];
+  markDirty();
+  render();
+  setTimeout(() => {
+    const card = document.querySelector(`.node-card[data-id="${id}"]`);
+    if (card) card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 50);
+}
+
+function deleteNode(id) {
+  snapshot();
+  const idx = state.nodes.findIndex(n => n.id === id);
+  if (idx !== -1) state.nodes.splice(idx, 1);
+  markDirty();
+  render();
+}
+
+function confirmDelete(node) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Delete Section?</h3>
+      <p>Are you sure you want to delete "<strong>${escHtml(node.title || 'Untitled')}</strong>"?
+      This cannot be undone once you save.</p>
+      <div class="modal-actions">
+        <button id="cancelDel">Cancel</button>
+        <button class="btn-danger" id="confirmDel">Delete</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#cancelDel').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#confirmDel').addEventListener('click', () => {
+    overlay.remove();
+    deleteNode(node.id);
+  });
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+}
+
+// ── File operations ───────────────────────────────────────────────────────────
+async function openFile() {
+  if (state.dirty && state.nodes.length) {
+    if (!confirm('You have unsaved changes. Discard and open a new file?')) return;
+  }
+  try {
+    const [fh] = await window.showOpenFilePicker({
+      types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+      multiple: false
+    });
+    const file = await fh.getFile();
+    const text = await file.text();
+    state.fileHandle = fh;
+    state.fileName = file.name;
+    loadContent(text, file.name);
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('Could not open file: ' + e.message);
+  }
+}
+
+async function saveFile() {
+  if (!state.fileHandle) { await saveAs(); return; }
+  try {
+    const writable = await state.fileHandle.createWritable();
+    await writable.write(toMarkdown());
+    await writable.close();
+    markClean();
+    toast('File saved ✓');
+  } catch (e) {
+    alert('Could not save file: ' + e.message);
+  }
+}
+
+async function saveAs() {
+  try {
+    const fh = await window.showSaveFilePicker({
+      suggestedName: state.fileName || 'document.md',
+      types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md'] } }]
+    });
+    const writable = await fh.createWritable();
+    await writable.write(toMarkdown());
+    await writable.close();
+    state.fileHandle = fh;
+    const file = await fh.getFile();
+    state.fileName = file.name;
+    markClean();
+    updateHeader();
+    toast('Saved as ' + state.fileName + ' ✓');
+  } catch (e) {
+    if (e.name !== 'AbortError') alert('Could not save file: ' + e.message);
+  }
+}
+
+function newDocument() {
+  if (state.dirty && state.nodes.length) {
+    if (!confirm('You have unsaved changes. Start a new document anyway?')) return;
+  }
+  state.fileHandle = null;
+  state.fileName = '';
+  state.nodes = [
+    { id: newId(), level: 1, title: 'Document Title', content: '' },
+    { id: newId(), level: 2, title: 'Introduction', content: '' },
+  ];
+  state.undoStack = [];
+  markClean();
+  updateHeader();
+  showEditor();
+  render();
+  toast('New document created');
+}
+
+function loadContent(text, name) {
+  state.nodes = parseNodes(text);
+  state.undoStack = [];
+  markClean();
+  updateHeader();
+  showEditor();
+  render();
+}
+
+function showEditor() {
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('editorContent').style.display = 'block';
+  document.getElementById('editTools').style.display = 'flex';
+  document.getElementById('fileBadge').style.display = '';
+}
+
+function updateHeader() {
+  const badge = document.getElementById('fileBadge');
+  if (state.fileName) {
+    badge.innerHTML = `${state.dirty ? '<span class="dirty-dot"></span>' : ''}${escHtml(state.fileName)}`;
+    badge.style.display = '';
+  } else {
+    badge.innerHTML = state.dirty ? '<span class="dirty-dot"></span>Untitled' : 'Untitled';
+    badge.style.display = state.nodes.length ? '' : 'none';
+  }
+  document.title = (state.dirty ? '• ' : '') + (state.fileName || 'Markdown Editor');
+  document.getElementById('btnSave').disabled = !state.fileHandle || !state.dirty;
+}
+
+function updateStatus() {
+  const words = state.nodes.reduce((acc, n) => {
+    return acc + (n.title + ' ' + n.content).split(/\s+/).filter(Boolean).length;
+  }, 0);
+  document.getElementById('statusFile').textContent = state.fileName || 'Unsaved document';
+  document.getElementById('statusSections').textContent =
+    state.nodes.length ? `${state.nodes.length} section${state.nodes.length !== 1 ? 's' : ''}` : '';
+  document.getElementById('statusWords').textContent =
+    words ? `~${words.toLocaleString()} words` : '';
+  document.getElementById('statusDirty').textContent = state.dirty ? '● Unsaved changes' : '';
+  updateHeader();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveFile();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    e.preventDefault();
+    undo();
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+    e.preventDefault();
+    openFile();
+  }
+});
+
+// ── Unsaved changes warning ───────────────────────────────────────────────────
+window.addEventListener('beforeunload', e => {
+  if (state.dirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+// ── Wire up buttons ───────────────────────────────────────────────────────────
+document.getElementById('btnOpen').addEventListener('click', openFile);
+document.getElementById('btnOpenWelcome').addEventListener('click', openFile);
+document.getElementById('btnNew').addEventListener('click', newDocument);
+document.getElementById('btnNewWelcome').addEventListener('click', newDocument);
+document.getElementById('btnSave').addEventListener('click', saveFile);
+document.getElementById('btnSaveAs').addEventListener('click', saveAs);
+document.getElementById('btnUndo').addEventListener('click', undo);
+document.getElementById('btnAddSection').addEventListener('click', () => {
+  const addBar = document.getElementById('editorContent')?.querySelector('.add-section-bar');
+  if (addBar) {
+    addBar.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    addBar.querySelector('#addTitle')?.focus();
+  }
+});
+
+// ── API check ─────────────────────────────────────────────────────────────────
+if (!window.showOpenFilePicker) {
+  document.querySelector('#welcome p').textContent =
+    'Your browser does not support the File System Access API. ' +
+    'Please use Chrome, Edge, or another Chromium-based browser.';
+  ['btnOpen','btnOpenWelcome','btnNew','btnNewWelcome'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = true;
+  });
+}
+</script>
+</body>
+</html>

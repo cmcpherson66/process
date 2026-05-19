@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Markdown Viewer</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f8f9fa;
+    --surface: #ffffff;
+    --border: #dee2e6;
+    --text: #212529;
+    --text-muted: #6c757d;
+    --accent: #0d6efd;
+    --accent-hover: #0a58ca;
+    --h1-bg: #e9ecef;
+    --h2-bg: #f1f3f5;
+    --h3-bg: #f8f9fa;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08);
+    --radius: 6px;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1b1e;
+      --surface: #25262b;
+      --border: #373a40;
+      --text: #c1c2c5;
+      --text-muted: #868e96;
+      --accent: #4dabf7;
+      --accent-hover: #74c0fc;
+      --h1-bg: #2c2e33;
+      --h2-bg: #25262b;
+      --h3-bg: #1e1f23;
+      --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  header h1 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .file-name {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    font-style: italic;
+  }
+
+  button {
+    font-family: var(--font-sans);
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 7px 16px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+  }
+  .btn-ghost:hover { background: var(--h1-bg); color: var(--text); }
+
+  .toolbar-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+  }
+
+  main {
+    flex: 1;
+    max-width: 900px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 24px 20px;
+  }
+
+  #welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    text-align: center;
+    gap: 16px;
+  }
+
+  #welcome .icon {
+    font-size: 4rem;
+    opacity: 0.3;
+  }
+
+  #welcome h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  #welcome p {
+    color: var(--text-muted);
+    max-width: 380px;
+    line-height: 1.6;
+  }
+
+  /* Tree */
+  #tree { display: none; }
+
+  .tree-node {
+    margin-bottom: 4px;
+  }
+
+  .node-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    cursor: pointer;
+    border-radius: var(--radius);
+    transition: background 0.1s;
+    user-select: none;
+  }
+
+  .node-header:hover { background: var(--h1-bg); }
+
+  .toggle-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    transition: transform 0.2s;
+    margin-top: 4px;
+  }
+
+  .toggle-btn.open { transform: rotate(90deg); }
+  .toggle-btn.leaf { opacity: 0; pointer-events: none; }
+
+  .node-title {
+    flex: 1;
+    padding: 6px 8px 6px 0;
+    line-height: 1.4;
+  }
+
+  /* H1 nodes */
+  .node-h1 > .node-header > .node-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--text);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 2px;
+  }
+
+  .node-h1 > .node-header {
+    padding: 8px 4px;
+    background: var(--h1-bg);
+    border-radius: var(--radius);
+    margin-bottom: 4px;
+  }
+
+  /* H2 nodes */
+  .node-h2 > .node-header > .node-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .node-h2 > .node-header {
+    padding: 4px 4px;
+  }
+
+  /* H3 nodes */
+  .node-h3 > .node-header > .node-title {
+    font-size: 0.975rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  .node-h3 > .node-header {
+    padding: 3px 4px;
+  }
+
+  .node-children {
+    padding-left: 20px;
+    border-left: 2px solid var(--border);
+    margin-left: 12px;
+    overflow: hidden;
+  }
+
+  .node-children.collapsed {
+    display: none;
+  }
+
+  .node-content {
+    padding: 8px 0 12px 0;
+    line-height: 1.7;
+    color: var(--text);
+  }
+
+  /* Markdown content rendering */
+  .node-content p { margin-bottom: 0.9em; }
+  .node-content p:last-child { margin-bottom: 0; }
+
+  .node-content ul, .node-content ol {
+    margin: 0.5em 0 0.9em 1.5em;
+  }
+
+  .node-content li { margin-bottom: 0.3em; }
+
+  .node-content code {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    background: var(--h1-bg);
+    padding: 2px 5px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+  }
+
+  .node-content pre {
+    background: var(--h1-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    overflow-x: auto;
+    margin: 0.8em 0;
+  }
+
+  .node-content pre code {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 0.875rem;
+  }
+
+  .node-content blockquote {
+    border-left: 3px solid var(--accent);
+    margin: 0.8em 0;
+    padding: 4px 0 4px 16px;
+    color: var(--text-muted);
+  }
+
+  .node-content strong { font-weight: 700; }
+  .node-content em { font-style: italic; }
+
+  .node-content a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .node-content a:hover { text-decoration: underline; }
+
+  .node-content hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1em 0;
+  }
+
+  .node-content table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.8em 0;
+    font-size: 0.9rem;
+  }
+
+  .node-content th, .node-content td {
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    text-align: left;
+  }
+
+  .node-content th {
+    background: var(--h1-bg);
+    font-weight: 600;
+  }
+
+  /* Collapse all / expand all controls */
+  .tree-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+
+  .tree-controls span {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    flex: 1;
+  }
+
+  /* Status bar */
+  #statusbar {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 6px 20px;
+    display: flex;
+    gap: 16px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .status-item { display: flex; gap: 4px; align-items: center; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Markdown Viewer <span id="fileNameDisplay" class="file-name"></span></h1>
+  <div class="toolbar-group">
+    <button class="btn-ghost" id="btnExpandAll" style="display:none">Expand All</button>
+    <button class="btn-ghost" id="btnCollapseAll" style="display:none">Collapse All</button>
+    <div class="divider" id="divider1" style="display:none"></div>
+    <button class="btn-primary" id="btnOpen">Open File…</button>
+  </div>
+</header>
+
+<main>
+  <div id="welcome">
+    <div class="icon">📄</div>
+    <h2>Open a Markdown File</h2>
+    <p>Click <strong>Open File…</strong> to browse for a <code>.md</code> file on your network drive or local machine.</p>
+    <button class="btn-primary" id="btnOpenWelcome">Open File…</button>
+  </div>
+
+  <div id="tree">
+    <div class="tree-controls">
+      <span id="treeStats"></span>
+    </div>
+    <div id="treeContent"></div>
+  </div>
+</main>
+
+<div id="statusbar">
+  <span class="status-item" id="statusFile">No file open</span>
+  <span class="status-item" id="statusSections"></span>
+  <span class="status-item" id="statusWords"></span>
+</div>
+
+<script>
+'use strict';
+
+// ── Minimal Markdown → HTML renderer ──────────────────────────────────────────
+function renderMarkdown(md) {
+  if (!md.trim()) return '';
+
+  let html = md
+    // Escape HTML entities first
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // Fenced code blocks
+  html = html.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+    return `<pre><code class="language-${lang.trim()}">${code.trimEnd()}</code></pre>\n`;
+  });
+
+  // Inline code (protect from further processing)
+  const codeSnippets = [];
+  html = html.replace(/`([^`]+)`/g, (_, c) => {
+    codeSnippets.push(c);
+    return `\x00CODE${codeSnippets.length - 1}\x00`;
+  });
+
+  // Blockquotes
+  html = html.replace(/^&gt; ?(.*)$/gm, '<blockquote>$1</blockquote>');
+  html = html.replace(/<\/blockquote>\n<blockquote>/g, '\n');
+
+  // Horizontal rules
+  html = html.replace(/^(---|\*\*\*|___)\s*$/gm, '<hr>');
+
+  // Bold + italic
+  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+
+  // Strikethrough
+  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
+
+  // Links + images
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2" style="max-width:100%">');
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // Tables (GFM)
+  html = html.replace(/((?:^\|.+\|\s*\n)+)/gm, tableBlock => {
+    const rows = tableBlock.trim().split('\n').map(r => r.trim());
+    let out = '<table>';
+    rows.forEach((row, i) => {
+      if (/^\|[-: |]+\|$/.test(row)) return; // separator
+      const cells = row.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const tag = i === 0 ? 'th' : 'td';
+      out += '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+    });
+    out += '</table>';
+    return out;
+  });
+
+  // Unordered lists
+  html = html.replace(/((?:^[ \t]*[-*+] .+\n?)+)/gm, block => {
+    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[ \t]*[-*+] /, '')}</li>`).join('');
+    return `<ul>${items}</ul>\n`;
+  });
+
+  // Ordered lists
+  html = html.replace(/((?:^[ \t]*\d+\. .+\n?)+)/gm, block => {
+    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[ \t]*\d+\. /, '')}</li>`).join('');
+    return `<ol>${items}</ol>\n`;
+  });
+
+  // Paragraphs
+  html = html.replace(/\n{2,}/g, '\n\n');
+  const parts = html.split('\n\n');
+  html = parts.map(p => {
+    p = p.trim();
+    if (!p) return '';
+    if (/^<(ul|ol|li|pre|blockquote|hr|table|tr|th|td|h[1-6])/.test(p)) return p;
+    return `<p>${p.replace(/\n/g, '<br>')}</p>`;
+  }).join('\n');
+
+  // Restore inline code
+  html = html.replace(/\x00CODE(\d+)\x00/g, (_, i) => `<code>${codeSnippets[+i]}</code>`);
+
+  return html;
+}
+
+// ── Parse markdown into tree structure ───────────────────────────────────────
+function parseTree(text) {
+  const lines = text.split('\n');
+  const root = { level: 0, title: '', content: [], children: [] };
+  const stack = [root];
+
+  let contentBuffer = [];
+
+  function flush(node, buf) {
+    if (buf.length) {
+      node.content.push(buf.join('\n').trim());
+    }
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const h1 = line.match(/^# (.+)/);
+    const h2 = line.match(/^## (.+)/);
+    const h3 = line.match(/^### (.+)/);
+
+    if (h1 || h2 || h3) {
+      const level = h1 ? 1 : h2 ? 2 : 3;
+      const title = (h1 || h2 || h3)[1].trim();
+
+      // Flush content to current node
+      const cur = stack[stack.length - 1];
+      flush(cur, contentBuffer);
+      contentBuffer = [];
+
+      const node = { level, title, content: [], children: [] };
+
+      // Pop stack until we find a parent of lower level
+      while (stack.length > 1 && stack[stack.length - 1].level >= level) {
+        stack.pop();
+      }
+
+      stack[stack.length - 1].children.push(node);
+      stack.push(node);
+    } else {
+      contentBuffer.push(line);
+    }
+  }
+
+  // Flush remaining
+  flush(stack[stack.length - 1], contentBuffer);
+
+  return root;
+}
+
+// ── Build DOM tree ────────────────────────────────────────────────────────────
+let totalSections = 0;
+let totalWords = 0;
+
+function buildTreeDOM(node) {
+  const frag = document.createDocumentFragment();
+
+  if (node.level === 0) {
+    // Root: render intro content + children
+    if (node.content.length && node.content[0]) {
+      const introDiv = document.createElement('div');
+      introDiv.className = 'node-content';
+      introDiv.innerHTML = renderMarkdown(node.content[0]);
+      frag.appendChild(introDiv);
+    }
+    node.children.forEach(child => frag.appendChild(buildTreeDOM(child)));
+    return frag;
+  }
+
+  totalSections++;
+  const allText = [node.title, ...node.content].join(' ');
+  totalWords += allText.split(/\s+/).filter(Boolean).length;
+
+  const div = document.createElement('div');
+  div.className = `tree-node node-h${node.level}`;
+
+  const header = document.createElement('div');
+  header.className = 'node-header';
+
+  const hasChildren = node.children.length > 0 || node.content.some(c => c.trim());
+  const hasSubNodes = node.children.length > 0;
+
+  const toggle = document.createElement('div');
+  toggle.className = hasSubNodes ? 'toggle-btn open' : 'toggle-btn leaf';
+  toggle.textContent = '▶';
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'node-title';
+  titleEl.textContent = node.title;
+
+  header.appendChild(toggle);
+  header.appendChild(titleEl);
+  div.appendChild(header);
+
+  const childrenDiv = document.createElement('div');
+  childrenDiv.className = 'node-children';
+
+  // Content blocks
+  node.content.forEach(block => {
+    if (!block.trim()) return;
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'node-content';
+    contentDiv.innerHTML = renderMarkdown(block);
+    childrenDiv.appendChild(contentDiv);
+  });
+
+  // Sub-nodes
+  node.children.forEach(child => childrenDiv.appendChild(buildTreeDOM(child)));
+
+  if (hasSubNodes || node.content.some(c => c.trim())) {
+    div.appendChild(childrenDiv);
+
+    header.addEventListener('click', () => {
+      const isOpen = !childrenDiv.classList.contains('collapsed');
+      childrenDiv.classList.toggle('collapsed', isOpen);
+      toggle.classList.toggle('open', !isOpen);
+    });
+  }
+
+  return div;
+}
+
+// ── File handling ─────────────────────────────────────────────────────────────
+let currentFileName = '';
+
+async function openFile() {
+  try {
+    const [fileHandle] = await window.showOpenFilePicker({
+      types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+      multiple: false
+    });
+    const file = await fileHandle.getFile();
+    const text = await file.text();
+    currentFileName = file.name;
+    renderFile(text, file.name);
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      alert('Could not open file: ' + e.message);
+    }
+  }
+}
+
+function renderFile(text, name) {
+  totalSections = 0;
+  totalWords = 0;
+
+  const tree = parseTree(text);
+  const treeContent = document.getElementById('treeContent');
+  treeContent.innerHTML = '';
+  treeContent.appendChild(buildTreeDOM(tree));
+
+  // Show tree, hide welcome
+  document.getElementById('welcome').style.display = 'none';
+  document.getElementById('tree').style.display = 'block';
+
+  // Toolbar
+  document.getElementById('btnExpandAll').style.display = '';
+  document.getElementById('btnCollapseAll').style.display = '';
+  document.getElementById('divider1').style.display = '';
+
+  // Stats
+  document.getElementById('treeStats').textContent =
+    `${totalSections} section${totalSections !== 1 ? 's' : ''}`;
+  document.getElementById('fileNameDisplay').textContent = '— ' + name;
+
+  // Status bar
+  document.getElementById('statusFile').textContent = '📄 ' + name;
+  document.getElementById('statusSections').textContent = `${totalSections} sections`;
+  document.getElementById('statusWords').textContent =
+    `~${totalWords.toLocaleString()} words`;
+}
+
+function expandAll() {
+  document.querySelectorAll('.node-children').forEach(el => el.classList.remove('collapsed'));
+  document.querySelectorAll('.toggle-btn:not(.leaf)').forEach(el => el.classList.add('open'));
+}
+
+function collapseAll() {
+  document.querySelectorAll('.node-children').forEach(el => el.classList.add('collapsed'));
+  document.querySelectorAll('.toggle-btn:not(.leaf)').forEach(el => el.classList.remove('open'));
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.getElementById('btnOpen').addEventListener('click', openFile);
+document.getElementById('btnOpenWelcome').addEventListener('click', openFile);
+document.getElementById('btnExpandAll').addEventListener('click', expandAll);
+document.getElementById('btnCollapseAll').addEventListener('click', collapseAll);
+
+// Check API support
+if (!window.showOpenFilePicker) {
+  document.querySelector('#welcome p').textContent =
+    'Your browser does not support the File System Access API. ' +
+    'Please use Chrome, Edge, or another Chromium-based browser.';
+  document.getElementById('btnOpen').disabled = true;
+  document.getElementById('btnOpenWelcome').disabled = true;
+}
+</script>
+</body>
+</html>
