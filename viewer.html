@@ -583,15 +583,48 @@ function buildTreeDOM(node) {
 // ── File handling ─────────────────────────────────────────────────────────────
 let currentFileName = '';
 
-async function openFile() {
+// Persist the last-used file handle in IndexedDB so the picker reopens in the same folder.
+const _db = (function () {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('processViewerPrefs', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+})();
+
+async function getLastHandle() {
   try {
-    const [fileHandle] = await window.showOpenFilePicker({
-      types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md', '.markdown'] } }],
-      multiple: false
+    const db = await _db;
+    return new Promise(resolve => {
+      const req = db.transaction('handles').objectStore('handles').get('lastFile');
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
     });
+  } catch { return null; }
+}
+
+async function saveLastHandle(handle) {
+  try {
+    const db = await _db;
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'lastFile');
+  } catch {}
+}
+
+async function openFile() {
+  const lastHandle = await getLastHandle();
+  const opts = {
+    types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+    multiple: false,
+  };
+  if (lastHandle) opts.startIn = lastHandle;
+  try {
+    const [fileHandle] = await window.showOpenFilePicker(opts);
     const file = await fileHandle.getFile();
     const text = await file.text();
     currentFileName = file.name;
+    await saveLastHandle(fileHandle);
     renderFile(text, file.name);
   } catch (e) {
     if (e.name !== 'AbortError') {

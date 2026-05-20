@@ -1205,19 +1205,53 @@ function confirmDelete(node) {
 }
 
 // ── File operations ───────────────────────────────────────────────────────────
+
+// Persist the last-used file handle in IndexedDB so the picker reopens in the same folder.
+const _db = (function () {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('processEditorPrefs', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+})();
+
+async function getLastHandle() {
+  try {
+    const db = await _db;
+    return new Promise(resolve => {
+      const req = db.transaction('handles').objectStore('handles').get('lastFile');
+      req.onsuccess = () => resolve(req.result ?? null);
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
+async function saveLastHandle(handle) {
+  try {
+    const db = await _db;
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(handle, 'lastFile');
+  } catch {}
+}
+
 async function openFile() {
   if (state.dirty && state.nodes.length) {
     if (!confirm('You have unsaved changes. Discard and open a new file?')) return;
   }
+  const lastHandle = await getLastHandle();
+  const opts = {
+    types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+    multiple: false,
+  };
+  if (lastHandle) opts.startIn = lastHandle;
   try {
-    const [fh] = await window.showOpenFilePicker({
-      types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md', '.markdown'] } }],
-      multiple: false
-    });
+    const [fh] = await window.showOpenFilePicker(opts);
     const file = await fh.getFile();
     const text = await file.text();
     state.fileHandle = fh;
     state.fileName = file.name;
+    await saveLastHandle(fh);
     loadContent(text, file.name);
   } catch (e) {
     if (e.name !== 'AbortError') alert('Could not open file: ' + e.message);
@@ -1238,17 +1272,21 @@ async function saveFile() {
 }
 
 async function saveAs() {
+  const lastHandle = await getLastHandle();
+  const opts = {
+    suggestedName: state.fileName || 'document.md',
+    types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md'] } }],
+  };
+  if (lastHandle) opts.startIn = lastHandle;
   try {
-    const fh = await window.showSaveFilePicker({
-      suggestedName: state.fileName || 'document.md',
-      types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md'] } }]
-    });
+    const fh = await window.showSaveFilePicker(opts);
     const writable = await fh.createWritable();
     await writable.write(toMarkdown());
     await writable.close();
     state.fileHandle = fh;
     const file = await fh.getFile();
     state.fileName = file.name;
+    await saveLastHandle(fh);
     markClean();
     updateHeader();
     toast('Saved as ' + state.fileName + ' ✓');
