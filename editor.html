@@ -1023,6 +1023,8 @@ function showInsertPopover(anchorBtn, textarea, type, node, updateWordCount) {
   const popover = document.createElement('div');
   popover.className = 'insert-popover';
 
+  // Use type="text" for all inputs — type="email" and type="url" can trigger
+  // OS-level handlers (e.g. Outlook opening) on Windows.
   if (isLink) {
     popover.innerHTML = `
       <h4>🔗 Insert Hyperlink</h4>
@@ -1032,11 +1034,11 @@ function showInsertPopover(anchorBtn, textarea, type, node, updateWordCount) {
       </div>
       <div class="popover-field">
         <label>Web address (URL)</label>
-        <input id="pop-url" type="url" placeholder="https://www.example.com" maxlength="2000">
+        <input id="pop-url" type="text" placeholder="https://www.example.com" maxlength="2000">
       </div>
       <div class="popover-actions">
-        <button id="pop-cancel">Cancel</button>
-        <button class="btn-primary" id="pop-insert">Insert Link</button>
+        <button type="button" id="pop-cancel">Cancel</button>
+        <button type="button" class="btn-primary" id="pop-insert">Insert Link</button>
       </div>
     `;
   } else {
@@ -1044,15 +1046,15 @@ function showInsertPopover(anchorBtn, textarea, type, node, updateWordCount) {
       <h4>@ Insert Email Address</h4>
       <div class="popover-field">
         <label>Email address</label>
-        <input id="pop-email" type="email" placeholder="name@example.com.au" maxlength="320">
+        <input id="pop-email" type="text" placeholder="name@example.com.au" maxlength="320">
       </div>
       <div class="popover-field">
         <label>Display text <span style="font-weight:400;text-transform:none">(optional — leave blank to show the address)</span></label>
         <input id="pop-text" type="text" placeholder="e.g. Contact us" value="${escHtml(selectedText)}" maxlength="300">
       </div>
       <div class="popover-actions">
-        <button id="pop-cancel">Cancel</button>
-        <button class="btn-primary" id="pop-insert">Insert Email</button>
+        <button type="button" id="pop-cancel">Cancel</button>
+        <button type="button" class="btn-primary" id="pop-insert">Insert Email</button>
       </div>
     `;
   }
@@ -1099,8 +1101,16 @@ function showInsertPopover(anchorBtn, textarea, type, node, updateWordCount) {
     markDirty();
   }
 
+  // Named reference so it can be removed from both close() and its own handler
+  function outsideClick(e) {
+    if (!popover.contains(e.target) && e.target !== anchorBtn) {
+      close();
+    }
+  }
+
   function close() {
     popover.remove();
+    document.removeEventListener('mousedown', outsideClick);
     if (activePopover === popover) activePopover = null;
   }
 
@@ -1115,15 +1125,8 @@ function showInsertPopover(anchorBtn, textarea, type, node, updateWordCount) {
     });
   });
 
-  // Dismiss on outside click
-  setTimeout(() => {
-    document.addEventListener('mousedown', function outsideClick(e) {
-      if (!popover.contains(e.target) && e.target !== anchorBtn) {
-        close();
-        document.removeEventListener('mousedown', outsideClick);
-      }
-    });
-  }, 10);
+  // Dismiss on outside click — delayed to skip the originating mousedown
+  setTimeout(() => document.addEventListener('mousedown', outsideClick), 10);
 }
 
 // ── Node mutations ────────────────────────────────────────────────────────────
