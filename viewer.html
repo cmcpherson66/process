@@ -415,16 +415,31 @@ function renderMarkdown(md) {
   // Strikethrough
   html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
-  // Auto-links: <https://...> and <email@address> — matched against escaped form
-  html = html.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-  html = html.replace(/&lt;([^\s@]+@[^\s@]+\.[^\s@&]+)&gt;/g, '<a href="mailto:$1">$1</a>');
+  // Links and images — each result is immediately swapped for a placeholder so
+  // no subsequent regex can re-match or nest inside an already-generated <a>.
+  const linkSlots = [];
+  function protect(html) {
+    linkSlots.push(html);
+    return `\x00LINK${linkSlots.length - 1}\x00`;
+  }
 
-  // Images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2" style="max-width:100%">');
+  // Auto-links: <https://...> and <email@address> (matched against escaped form)
+  html = html.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g, (_, url) =>
+    protect(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`));
+  html = html.replace(/&lt;([^\s@]+@[^\s@]+\.[^\s@&]+)&gt;/g, (_, email) =>
+    protect(`<a href="mailto:${email}">${email}</a>`));
 
-  // Links — mailto: must not get target="_blank" or it triggers a double OS dispatch
-  html = html.replace(/\[([^\]]+)\]\((mailto:[^)]+)\)/g, '<a href="$2">$1</a>');
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Images (before links so ![...](...) isn't matched as a link)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) =>
+    protect(`<img alt="${alt}" src="${src}" style="max-width:100%">`));
+
+  // mailto links — no target="_blank" to avoid double OS dispatch opening Outlook twice
+  html = html.replace(/\[([^\]]+)\]\((mailto:[^)]+)\)/g, (_, text, href) =>
+    protect(`<a href="${href}">${text}</a>`));
+
+  // Regular links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) =>
+    protect(`<a href="${href}" target="_blank" rel="noopener">${text}</a>`));
 
   // Tables (GFM)
   html = html.replace(/((?:^\|.+\|\s*\n)+)/gm, tableBlock => {
@@ -462,7 +477,8 @@ function renderMarkdown(md) {
     return `<p>${p.replace(/\n/g, '<br>')}</p>`;
   }).join('\n');
 
-  // Restore inline code
+  // Restore links first (they may contain code placeholders), then inline code
+  html = html.replace(/\x00LINK(\d+)\x00/g, (_, i) => linkSlots[+i]);
   html = html.replace(/\x00CODE(\d+)\x00/g, (_, i) => `<code>${codeSnippets[+i]}</code>`);
 
   return html;
