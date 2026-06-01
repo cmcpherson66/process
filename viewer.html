@@ -323,6 +323,72 @@
     font-weight: 600;
   }
 
+  /* Status controls on each heading row */
+  .status-controls {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 8px;
+  }
+
+  .status-btn {
+    font-family: var(--font-sans);
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background: transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+    line-height: 1.6;
+  }
+
+  .done-btn { color: #2e7d32; border-color: #a5d6a7; }
+  .done-btn:hover { background: rgba(46,125,50,0.1); }
+  .done-btn.active { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+
+  .na-btn { color: #b71c1c; border-color: #ef9a9a; }
+  .na-btn:hover { background: rgba(183,28,28,0.1); }
+  .na-btn.active { background: #b71c1c; color: #fff; border-color: #b71c1c; }
+
+  @media (prefers-color-scheme: dark) {
+    .done-btn { color: #81c784; border-color: #2d5a2d; }
+    .done-btn.active { background: #2e7d32; color: #e8f5e9; border-color: #2e7d32; }
+    .na-btn { color: #ef9a9a; border-color: #5a2020; }
+    .na-btn.active { background: #b71c1c; color: #ffebee; border-color: #b71c1c; }
+  }
+
+  /* Row tinting when status is set */
+  .tree-node.status-done > .node-header { background: rgba(46,125,50,0.11) !important; }
+  .tree-node.status-na  > .node-header { background: rgba(183,28,28,0.11) !important; }
+
+  @media (prefers-color-scheme: dark) {
+    .tree-node.status-done > .node-header { background: rgba(46,125,50,0.22) !important; }
+    .tree-node.status-na  > .node-header { background: rgba(183,28,28,0.22) !important; }
+  }
+
+  /* Toast */
+  #toast {
+    position: fixed;
+    bottom: 48px;
+    left: 50%;
+    transform: translateX(-50%) translateY(12px);
+    background: #333;
+    color: #fff;
+    padding: 7px 18px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    opacity: 0;
+    transition: all 0.25s;
+    pointer-events: none;
+    z-index: 999;
+    white-space: nowrap;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
   /* Status bar */
   #statusbar {
     background: var(--surface);
@@ -371,7 +437,10 @@
 <div id="statusbar">
   <span class="status-item" id="statusFile">No file open</span>
   <span class="status-item" id="statusWords"></span>
+  <span class="status-item" id="statusSave"></span>
 </div>
+
+<div id="toast"></div>
 
 <script>
 'use strict';
@@ -485,37 +554,42 @@ function renderMarkdown(md) {
 }
 
 // ── Parse markdown into tree structure ───────────────────────────────────────
-function parseTree(text) {
-  const lines = text.split('\n');
-  const root = { level: 0, title: '', content: [], children: [] };
-  const stack = [root];
+// fileLines / fileLineEnding are module-level so saveFile() can update them.
+let fileLines = [];
+let fileLineEnding = '\n';
 
+function parseTree(text) {
+  fileLineEnding = text.includes('\r\n') ? '\r\n' : '\n';
+  fileLines = text.split('\n').map(l => l.replace(/\r$/, ''));
+
+  const root = { level: 0, title: '', content: [], children: [], lineIdx: -1, status: null };
+  const stack = [root];
   let contentBuffer = [];
 
   function flush(node, buf) {
-    if (buf.length) {
-      node.content.push(buf.join('\n').trim());
-    }
+    if (buf.length) node.content.push(buf.join('\n').trim());
   }
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (let i = 0; i < fileLines.length; i++) {
+    const line = fileLines[i];
     const h1 = line.match(/^# (.+)/);
     const h2 = line.match(/^## (.+)/);
     const h3 = line.match(/^### (.+)/);
 
     if (h1 || h2 || h3) {
       const level = h1 ? 1 : h2 ? 2 : 3;
-      const title = (h1 || h2 || h3)[1].trim();
+      const rawTitle = (h1 || h2 || h3)[1];
 
-      // Flush content to current node
-      const cur = stack[stack.length - 1];
-      flush(cur, contentBuffer);
+      // Extract and strip <!-- done --> or <!-- na --> status marker
+      const statusMatch = rawTitle.match(/<!--\s*(done|na)\s*-->/);
+      const status = statusMatch ? statusMatch[1] : null;
+      const title = rawTitle.replace(/<!--[^>]*-->/g, '').trim();
+
+      flush(stack[stack.length - 1], contentBuffer);
       contentBuffer = [];
 
-      const node = { level, title, content: [], children: [] };
+      const node = { level, title, content: [], children: [], lineIdx: i, status };
 
-      // Pop stack until we find a parent of lower level
       while (stack.length > 1 && stack[stack.length - 1].level >= level) {
         stack.pop();
       }
@@ -527,9 +601,7 @@ function parseTree(text) {
     }
   }
 
-  // Flush remaining
   flush(stack[stack.length - 1], contentBuffer);
-
   return root;
 }
 
@@ -555,7 +627,7 @@ function buildTreeDOM(node) {
   totalWords += allText.split(/\s+/).filter(Boolean).length;
 
   const div = document.createElement('div');
-  div.className = `tree-node node-h${node.level}`;
+  div.className = `tree-node node-h${node.level}` + (node.status ? ` status-${node.status}` : '');
 
   const header = document.createElement('div');
   header.className = 'node-header';
@@ -570,8 +642,35 @@ function buildTreeDOM(node) {
   titleEl.className = 'node-title';
   titleEl.textContent = node.title;
 
+  // Status tick boxes
+  const statusControls = document.createElement('div');
+  statusControls.className = 'status-controls';
+
+  const doneBtn = document.createElement('button');
+  doneBtn.type = 'button';
+  doneBtn.className = 'status-btn done-btn' + (node.status === 'done' ? ' active' : '');
+  doneBtn.textContent = '✓ Done';
+
+  const naBtn = document.createElement('button');
+  naBtn.type = 'button';
+  naBtn.className = 'status-btn na-btn' + (node.status === 'na' ? ' active' : '');
+  naBtn.textContent = '✗ N/A';
+
+  statusControls.appendChild(doneBtn);
+  statusControls.appendChild(naBtn);
+
+  doneBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    applyStatus(node, div, doneBtn, naBtn, node.status === 'done' ? null : 'done');
+  });
+  naBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    applyStatus(node, div, doneBtn, naBtn, node.status === 'na' ? null : 'na');
+  });
+
   header.appendChild(toggle);
   header.appendChild(titleEl);
+  header.appendChild(statusControls);
   div.appendChild(header);
 
   const childrenDiv = document.createElement('div');
@@ -600,6 +699,56 @@ function buildTreeDOM(node) {
   }
 
   return div;
+}
+
+// ── Status updates & saving ───────────────────────────────────────────────────
+let currentFileHandle = null;
+
+function applyStatus(node, div, doneBtn, naBtn, newStatus) {
+  node.status = newStatus;
+
+  // Update button states
+  doneBtn.classList.toggle('active', newStatus === 'done');
+  naBtn.classList.toggle('active',   newStatus === 'na');
+
+  // Tint the row
+  div.classList.remove('status-done', 'status-na');
+  if (newStatus) div.classList.add(`status-${newStatus}`);
+
+  // Rewrite the heading line in the in-memory copy
+  const hashes = '#'.repeat(node.level);
+  const marker = newStatus ? ` <!-- ${newStatus} -->` : '';
+  fileLines[node.lineIdx] = `${hashes} ${node.title}${marker}`;
+
+  saveFile();
+}
+
+async function saveFile() {
+  if (!currentFileHandle) return;
+  try {
+    // Upgrade to readwrite if we only have read permission
+    const perm = await currentFileHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      const req = await currentFileHandle.requestPermission({ mode: 'readwrite' });
+      if (req !== 'granted') { toast('Write permission denied'); return; }
+    }
+    const writable = await currentFileHandle.createWritable();
+    await writable.write(fileLines.join(fileLineEnding));
+    await writable.close();
+    document.getElementById('statusSave').textContent = 'Saved ✓';
+    setTimeout(() => { document.getElementById('statusSave').textContent = ''; }, 2000);
+  } catch (e) {
+    toast('Could not save: ' + e.message);
+  }
+}
+
+let toastTimer;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
 }
 
 // ── File handling ─────────────────────────────────────────────────────────────
@@ -646,6 +795,7 @@ async function openFile() {
     const file = await fileHandle.getFile();
     const text = await file.text();
     currentFileName = file.name;
+    currentFileHandle = fileHandle;
     await saveLastHandle(fileHandle);
     renderFile(text, file.name);
   } catch (e) {
