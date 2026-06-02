@@ -293,11 +293,12 @@
   .node-content strong { font-weight: 700; }
   .node-content em { font-style: italic; }
 
-  .node-content a {
+  .node-content a, .node-content .mailto-link {
     color: var(--accent);
     text-decoration: none;
+    cursor: pointer;
   }
-  .node-content a:hover { text-decoration: underline; }
+  .node-content a:hover, .node-content .mailto-link:hover { text-decoration: underline; }
 
   .node-content hr {
     border: none;
@@ -450,22 +451,53 @@ function renderMarkdown(md) {
   if (!md.trim()) return '';
 
   let html = md
-    // Escape HTML entities first
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
   // Fenced code blocks
-  html = html.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    return `<pre><code class="language-${lang.trim()}">${code.trimEnd()}</code></pre>\n`;
-  });
+  html = html.replace(/```([^\n]*)\n([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code class="language-${lang.trim()}">${code.trimEnd()}</code></pre>\n`);
 
-  // Inline code (protect from further processing)
+  // Inline code — protected immediately so nothing touches the code content
   const codeSnippets = [];
   html = html.replace(/`([^`]+)`/g, (_, c) => {
     codeSnippets.push(c);
     return `\x00CODE${codeSnippets.length - 1}\x00`;
   });
+
+  // ── Links and images FIRST — before bold/italic so that underscores or
+  //    asterisks inside URLs and email addresses are never mangled by the
+  //    inline-formatting regexes.
+  const linkSlots = [];
+  function protect(s) { linkSlots.push(s); return `\x00LINK${linkSlots.length - 1}\x00`; }
+
+  // Auto-links: <https://...> and <email@address> (matched on escaped form)
+  html = html.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g, (_, url) =>
+    protect(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`));
+  html = html.replace(/&lt;([^\s@]+@[^\s@]+\.[^\s@&]+)&gt;/g, (_, email) =>
+    protect(`<a class="mailto-link" data-href="mailto:${email}">${email}</a>`));
+
+  // Images (before links so ![...](...) isn't consumed as a link)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) =>
+    protect(`<img alt="${alt}" src="${src}" style="max-width:100%">`));
+
+  // Explicit mailto links — display text is captured before any italic/bold
+  // processing, so underscores in the address can never span across it.
+  html = html.replace(/\[([^\]]+)\]\((mailto:[^)]+)\)/g, (_, text, href) =>
+    protect(`<a class="mailto-link" data-href="${href}">${text}</a>`));
+
+  // Regular https/http links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) =>
+    protect(`<a href="${href}" target="_blank" rel="noopener">${text}</a>`));
+
+  // ── Inline formatting — now safe because all links are opaque placeholders
+  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
 
   // Blockquotes
   html = html.replace(/^&gt; ?(.*)$/gm, '<blockquote>$1</blockquote>');
@@ -474,48 +506,12 @@ function renderMarkdown(md) {
   // Horizontal rules
   html = html.replace(/^(---|\*\*\*|___)\s*$/gm, '<hr>');
 
-  // Bold + italic
-  html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  html = html.replace(/_(.+?)_/g, '<em>$1</em>');
-
-  // Strikethrough
-  html = html.replace(/~~(.+?)~~/g, '<del>$1</del>');
-
-  // Links and images — each result is immediately swapped for a placeholder so
-  // no subsequent regex can re-match or nest inside an already-generated <a>.
-  const linkSlots = [];
-  function protect(html) {
-    linkSlots.push(html);
-    return `\x00LINK${linkSlots.length - 1}\x00`;
-  }
-
-  // Auto-links: <https://...> and <email@address> (matched against escaped form)
-  html = html.replace(/&lt;(https?:\/\/[^&\s]+)&gt;/g, (_, url) =>
-    protect(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`));
-  html = html.replace(/&lt;([^\s@]+@[^\s@]+\.[^\s@&]+)&gt;/g, (_, email) =>
-    protect(`<a href="mailto:${email}">${email}</a>`));
-
-  // Images (before links so ![...](...) isn't matched as a link)
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) =>
-    protect(`<img alt="${alt}" src="${src}" style="max-width:100%">`));
-
-  // mailto links — no target="_blank" to avoid double OS dispatch opening Outlook twice
-  html = html.replace(/\[([^\]]+)\]\((mailto:[^)]+)\)/g, (_, text, href) =>
-    protect(`<a href="${href}">${text}</a>`));
-
-  // Regular links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) =>
-    protect(`<a href="${href}" target="_blank" rel="noopener">${text}</a>`));
-
   // Tables (GFM)
   html = html.replace(/((?:^\|.+\|\s*\n)+)/gm, tableBlock => {
     const rows = tableBlock.trim().split('\n').map(r => r.trim());
     let out = '<table>';
     rows.forEach((row, i) => {
-      if (/^\|[-: |]+\|$/.test(row)) return; // separator
+      if (/^\|[-: |]+\|$/.test(row)) return;
       const cells = row.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
       const tag = i === 0 ? 'th' : 'td';
       out += '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
@@ -538,15 +534,14 @@ function renderMarkdown(md) {
 
   // Paragraphs
   html = html.replace(/\n{2,}/g, '\n\n');
-  const parts = html.split('\n\n');
-  html = parts.map(p => {
+  html = html.split('\n\n').map(p => {
     p = p.trim();
     if (!p) return '';
     if (/^<(ul|ol|li|pre|blockquote|hr|table|tr|th|td|h[1-6])/.test(p)) return p;
     return `<p>${p.replace(/\n/g, '<br>')}</p>`;
   }).join('\n');
 
-  // Restore links first (they may contain code placeholders), then inline code
+  // Restore — links first (may contain CODE placeholders), then code
   html = html.replace(/\x00LINK(\d+)\x00/g, (_, i) => linkSlots[+i]);
   html = html.replace(/\x00CODE(\d+)\x00/g, (_, i) => `<code>${codeSnippets[+i]}</code>`);
 
@@ -841,6 +836,22 @@ function collapseAll() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+
+// Mailto links use data-href (no href attribute) and are activated here.
+// A single capture-phase handler with a 2-second debounce guarantees exactly
+// one mail-client launch per click, regardless of DOM structure or OS behaviour.
+let _lastMailto = 0;
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-href^="mailto:"]');
+  if (!a) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  const now = Date.now();
+  if (now - _lastMailto < 2000) return;
+  _lastMailto = now;
+  window.location.href = a.dataset.href;
+}, true);
+
 document.getElementById('btnOpen').addEventListener('click', openFile);
 document.getElementById('btnOpenWelcome').addEventListener('click', openFile);
 document.getElementById('btnExpandAll').addEventListener('click', expandAll);
