@@ -403,6 +403,41 @@
 
   .status-item { display: flex; gap: 4px; align-items: center; }
 
+  /* Email popover */
+  .email-popover {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    padding: 12px 14px;
+    z-index: 9999;
+    min-width: 240px;
+    max-width: 340px;
+  }
+
+  .email-popover-address {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    color: var(--text);
+    word-break: break-all;
+    margin-bottom: 10px;
+    padding: 5px 8px;
+    background: var(--h1-bg);
+    border-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  .email-popover-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .email-popover-actions button {
+    font-size: 0.8rem;
+    padding: 5px 12px;
+  }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
@@ -835,21 +870,110 @@ function collapseAll() {
   document.querySelectorAll('.toggle-btn:not(.leaf)').forEach(el => el.classList.remove('open'));
 }
 
+// ── Email popover ─────────────────────────────────────────────────────────────
+// Two-step approach: clicking a mailto link shows a popover; the user must
+// explicitly click "Open in Mail App" to launch the mail client. The button
+// is immediately disabled on click and the popover removed from the DOM before
+// activation, so there is never a second DOM element that could re-fire the OS
+// handler. Activation uses a temporary <a> click (a clean, single gesture)
+// rather than window.location.href which can double-dispatch on Windows/Edge.
+
+let _activeEmailPopover = null;
+
+function showEmailPopover(anchorEl, mailto) {
+  // Dismiss any existing popover first
+  if (_activeEmailPopover) {
+    _activeEmailPopover.remove();
+    _activeEmailPopover = null;
+  }
+
+  const address = mailto.replace(/^mailto:/, '');
+
+  const popover = document.createElement('div');
+  popover.className = 'email-popover';
+  popover.innerHTML = `
+    <div class="email-popover-address"></div>
+    <div class="email-popover-actions">
+      <button type="button" class="btn-primary open-mail-btn">Open in Mail App</button>
+      <button type="button" class="btn-ghost copy-addr-btn">Copy Address</button>
+    </div>`;
+
+  popover.querySelector('.email-popover-address').textContent = address;
+  document.body.appendChild(popover);
+  _activeEmailPopover = popover;
+
+  // Position near the anchor element
+  const rect = anchorEl.getBoundingClientRect();
+  const popW = 280;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+  if (top + 120 > window.innerHeight) top = rect.top - 120;
+  popover.style.left = Math.max(8, left) + 'px';
+  popover.style.top = Math.max(8, top) + 'px';
+
+  function dismiss() {
+    popover.remove();
+    if (_activeEmailPopover === popover) _activeEmailPopover = null;
+    document.removeEventListener('mousedown', outsideClick, true);
+    document.removeEventListener('keydown', escKey, true);
+  }
+
+  function outsideClick(e) {
+    if (!popover.contains(e.target)) dismiss();
+  }
+
+  function escKey(e) {
+    if (e.key === 'Escape') dismiss();
+  }
+
+  // Small delay before attaching outside-click so the triggering click doesn't
+  // immediately dismiss the popover.
+  setTimeout(() => {
+    document.addEventListener('mousedown', outsideClick, true);
+    document.addEventListener('keydown', escKey, true);
+  }, 50);
+
+  popover.querySelector('.open-mail-btn').addEventListener('click', () => {
+    // Disable immediately to prevent any second activation
+    const btn = popover.querySelector('.open-mail-btn');
+    btn.disabled = true;
+
+    // Remove popover from DOM before activating — eliminates any chance of
+    // the OS handler finding a second element to dispatch to.
+    dismiss();
+
+    // Activate via a temporary anchor click (single clean user gesture).
+    // This avoids window.location.href which can trigger both Edge's built-in
+    // Outlook integration and the Windows shell handler simultaneously.
+    const tmp = document.createElement('a');
+    tmp.href = mailto;
+    tmp.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+    document.body.appendChild(tmp);
+    tmp.click();
+    setTimeout(() => tmp.remove(), 200);
+  });
+
+  popover.querySelector('.copy-addr-btn').addEventListener('click', () => {
+    navigator.clipboard.writeText(address).then(() => {
+      toast('Address copied');
+    }).catch(() => {
+      toast('Copy failed — please copy manually: ' + address);
+    });
+    dismiss();
+  });
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-// Mailto links use data-href (no href attribute) and are activated here.
-// A single capture-phase handler with a 2-second debounce guarantees exactly
-// one mail-client launch per click, regardless of DOM structure or OS behaviour.
-let _lastMailto = 0;
+// Mailto links use data-href (no href). Intercept clicks in capture phase and
+// show a two-step popover instead of activating the URI directly.
 document.addEventListener('click', e => {
   const a = e.target.closest('[data-href^="mailto:"]');
   if (!a) return;
   e.preventDefault();
   e.stopImmediatePropagation();
-  const now = Date.now();
-  if (now - _lastMailto < 2000) return;
-  _lastMailto = now;
-  window.location.href = a.dataset.href;
+  showEmailPopover(a, a.dataset.href);
 }, true);
 
 document.getElementById('btnOpen').addEventListener('click', openFile);
