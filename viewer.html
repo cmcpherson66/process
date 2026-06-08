@@ -755,21 +755,47 @@ function applyStatus(node, div, doneBtn, naBtn, newStatus) {
 
 async function saveFile() {
   if (!currentFileHandle) return;
+  const content = fileLines.join(fileLineEnding);
+
+  // Try direct write first — works on local drives; fails silently for network paths.
   try {
-    // Upgrade to readwrite if we only have read permission
     const perm = await currentFileHandle.queryPermission({ mode: 'readwrite' });
     if (perm !== 'granted') {
       const req = await currentFileHandle.requestPermission({ mode: 'readwrite' });
-      if (req !== 'granted') { toast('Write permission denied'); return; }
+      if (req !== 'granted') throw new Error('permission denied');
     }
     const writable = await currentFileHandle.createWritable();
-    await writable.write(fileLines.join(fileLineEnding));
+    await writable.write(content);
     await writable.close();
-    document.getElementById('statusSave').textContent = 'Saved ✓';
-    setTimeout(() => { document.getElementById('statusSave').textContent = ''; }, 2000);
-  } catch (e) {
-    toast('Could not save: ' + e.message);
+    showSaved();
+    return;
+  } catch (_) {
+    // Direct write failed (e.g. network drive) — fall through to Save As.
   }
+
+  // Fallback: Save As dialog pre-navigated to the same folder with the same
+  // filename. After one confirmation the returned handle is writable, so all
+  // subsequent saves this session are silent.
+  try {
+    const fh = await window.showSaveFilePicker({
+      suggestedName: currentFileName,
+      startIn: currentFileHandle,
+      types: [{ description: 'Markdown Files', accept: { 'text/markdown': ['.md', '.markdown'] } }],
+    });
+    const writable = await fh.createWritable();
+    await writable.write(content);
+    await writable.close();
+    currentFileHandle = fh;
+    await saveLastHandle(fh);
+    showSaved();
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('Could not save: ' + e.message);
+  }
+}
+
+function showSaved() {
+  document.getElementById('statusSave').textContent = 'Saved ✓';
+  setTimeout(() => { document.getElementById('statusSave').textContent = ''; }, 2000);
 }
 
 let toastTimer;
